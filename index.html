@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>防音室 予約システム</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="modal.css">
+
+    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.13/main.min.css' rel='stylesheet' />
+    <style>
+        /* カレンダーの表示調整 */
+        #calendar {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 10px;
+        }
+        .fc-event {
+            background-color: #ffb3b3; /* 予約済みイベントの色 */
+            border-color: #ffb3b3;
+            color: #333;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>防音室 予約カレンダー</h1>
+        <p>希望する時間帯をクリックして予約してください。</p>
+        <div id='calendar'></div>
+    </div>
+
+    <div id="bookingModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2>予約情報の入力</h2>
+            <form id="bookingForm">
+                <p>選択日時: <span id="selectedDateTime"></span></p>
+                <label for="reservantName">予約者名:</label>
+                <input type="text" id="reservantName" required>
+
+                <label for="bandName">パート / バンド名:</label>
+                <input type="text" id="bandName" required>
+
+                <label for="startTimeInput">開始時刻:</label>
+                <input type="datetime-local" id="startTimeInput" required>
+
+                <label for="endTimeInput">終了時刻:</label>
+                <input type="datetime-local" id="endTimeInput" required>
+
+                <button type="submit">予約する</button>
+            </form>
+            <p id="messageArea" style="color: red; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.13/main.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.13/locales/ja.js'></script> <script>
+        // ★Apps ScriptのウェブアプリURLをここに貼り付けてください★
+        const SCRIPT_WEB_APP_URL = 'ここにデプロイしたApps ScriptのウェブアプリURLを貼り付けてください';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+            const bookingModal = document.getElementById('bookingModal');
+            const closeButton = document.querySelector('.close-button');
+            const bookingForm = document.getElementById('bookingForm');
+            const selectedDateTimeSpan = document.getElementById('selectedDateTime');
+            const startTimeInput = document.getElementById('startTimeInput');
+            const endTimeInput = document.getElementById('endTimeInput');
+            const messageArea = document.getElementById('messageArea');
+
+            let selectedStart, selectedEnd; // クリックで選択された開始・終了時間
+
+            const calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'timeGridWeek', // 週表示（時間軸あり）
+                locale: 'ja', // 日本語設定
+                slotMinTime: '09:00:00', // 表示する最小時刻
+                slotMaxTime: '23:00:00', // 表示する最大時刻
+                allDaySlot: false, // 終日スロットを非表示
+                expandRows: true, // 時間帯を埋める
+                nowIndicator: true, // 現在時刻を示す線
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'timeGridWeek,dayGridMonth' // 週表示と月表示の切り替えボタン
+                },
+                events: async function(fetchInfo, successCallback, failureCallback) {
+                    // Apps Scriptから既存の予約情報を取得
+                    try {
+                        const response = await fetch(SCRIPT_WEB_APP_URL);
+                        const data = await response.json();
+                        if (data.success) {
+                            const events = data.busySlots.map(slot => ({
+                                title: '予約済み', // FullCalendarに表示するタイトル
+                                start: slot.start,
+                                end: slot.end,
+                                display: 'background' // 背景色として表示
+                                // backgroundColor: '#ffcccc' // もしくはイベントとして色を付ける
+                            }));
+                            successCallback(events);
+                        } else {
+                            console.error('カレンダーイベントの取得に失敗しました:', data.message);
+                            failureCallback(data.message);
+                        }
+                    } catch (error) {
+                        console.error('カレンダーイベントの取得中にエラーが発生しました:', error);
+                        failureCallback(error);
+                    }
+                },
+                selectable: true, // 時間帯を選択可能にする
+                selectMirror: true, // 選択中にプレースホルダーを表示
+                selectOverlap: false, // 選択時に既存イベントと重なるのを許可しない
+                select: function(info) {
+                    // ユーザーが時間帯を選択した時の処理
+                    selectedStart = info.start;
+                    selectedEnd = info.end;
+
+                    // モーダルに選択日時を表示
+                    selectedDateTimeSpan.textContent = `${formatDate(selectedStart)} - ${formatDate(selectedEnd)}`;
+                    startTimeInput.value = formatDateTimeLocal(selectedStart);
+                    endTimeInput.value = formatDateTimeLocal(selectedEnd);
+                    messageArea.textContent = ''; // メッセージエリアをクリア
+
+                    bookingModal.style.display = 'block'; // モーダルを表示
+                    calendar.unselect(); // カレンダーの選択を解除
+                },
+                eventClick: function(info) {
+                    // 既に予約されているイベントをクリックした時の処理（任意）
+                    alert('この時間は予約済みです: ' + info.event.title);
+                }
+            });
+            calendar.render();
+
+            // モーダルを閉じる
+            closeButton.onclick = function() {
+                bookingModal.style.display = 'none';
+            }
+            window.onclick = function(event) {
+                if (event.target == bookingModal) {
+                    bookingModal.style.display = 'none';
+                }
+            }
+
+            // 予約フォーム送信処理
+            bookingForm.addEventListener('submit', async function(event) {
+                event.preventDefault(); // デフォルトのフォーム送信を防止
+
+                const reservantName = document.getElementById('reservantName').value;
+                const bandName = document.getElementById('bandName').value;
+                const startTime = new Date(startTimeInput.value);
+                const endTime = new Date(endTimeInput.value);
+
+                // 入力値のバリデーション（簡易的）
+                if (startTime >= endTime) {
+                    messageArea.textContent = '開始時刻は終了時刻より前に設定してください。';
+                    return;
+                }
+
+                messageArea.textContent = '予約を処理中...';
+                messageArea.style.color = 'blue';
+
+                try {
+                    const response = await fetch(SCRIPT_WEB_APP_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            reservantName: reservantName,
+                            bandName: bandName,
+                            startTime: startTime.toISOString(), // ISO形式で送信
+                            endTime: endTime.toISOString()
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        messageArea.textContent = '予約が完了しました！';
+                        messageArea.style.color = 'green';
+                        bookingForm.reset(); // フォームをリセット
+                        setTimeout(() => {
+                            bookingModal.style.display = 'none';
+                            calendar.refetchEvents(); // カレンダーのイベントを再読み込みして最新の状態にする
+                        }, 1500); // 1.5秒後にモーダルを閉じる
+                    } else {
+                        messageArea.textContent = `予約失敗: ${data.message}`;
+                        messageArea.style.color = 'red';
+                        // ダブルブッキングの場合、カレンダーを更新しない
+                        if (!data.isDoubleBooking) {
+                            calendar.refetchEvents(); // 失敗時も一応カレンダーを再読み込み
+                        }
+                    }
+                } catch (error) {
+                    console.error('予約エラー:', error);
+                    messageArea.textContent = '予約中に予期せぬエラーが発生しました。';
+                    messageArea.style.color = 'red';
+                }
+            });
+
+            // 日付表示整形ヘルパー
+            function formatDate(date) {
+                return date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) + ' ' +
+                       date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            }
+
+            // input type="datetime-local" 用のフォーマット
+            function formatDateTimeLocal(date) {
+                const year = date.getFullYear();
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                const hours = date.getHours().toString().padStart(2, '0');
+                const minutes = date.getMinutes().toString().padStart(2, '0');
+                return `<span class="math-inline">\{year\}\-</span>{month}-<span class="math-inline">\{day\}T</span>{hours}:${minutes}`;
+            }
+        });
+    </script>
+</body>
+</html>
